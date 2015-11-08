@@ -100,7 +100,11 @@ public class LambdaExpressionExplr {
 
     //streams
     public static void runningTask3() {
-        //list.stream()
-            //.filter((s) -> s.indexOf('a') > 0 )
+        Comparator<String> comparator = (x, y) -> x.length()-y.length();
+        list.stream()
+            .sorted(comparator)
+            .map(String::toUpperCase)
+            .filter((s) -> s.toLowerCase().indexOf('a') > 0 )
+            .forEach(System.out::println);
     }
 }
