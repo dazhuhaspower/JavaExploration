@@ -1,9 +1,16 @@
 package java8Features;
 
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.Month;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
+import java.time.temporal.ChronoField;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Collections;
@@ -11,17 +18,28 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 public class LambdaExpressionExplr {
     static List<String> list = Arrays.asList("VMware", "RSA", "Pivotal", "EMC", "Dell");
-    static Consumer<Object> consumer = System.out::println;
+    private static boolean isVerbose = false; 
+    static Consumer<Object> consumer = (x) -> {
+            if(isVerbose) {
+                System.out.println(x);
+            }
+        };
+    static Consumer<Object> printer = System.out::println;
 
     public static void main(String[] args) {
         runningTask1();
@@ -38,7 +56,7 @@ public class LambdaExpressionExplr {
 
         Counter<String> counter = (input) -> input==null ? 0 : input.size();
         Integer size = counter.count(list);
-        System.out.println("size of list: " + size);
+        consumer.accept("size of list: " + size);
 
         //method references
         Collections.sort(list, String::compareTo);
@@ -47,18 +65,18 @@ public class LambdaExpressionExplr {
         Counter2 c2 = new Counter2();
         counter = c2::count;
         size = counter.count(list);
-        System.out.println("size of list: " + size);
+        consumer.accept("size of list: " + size);
 
         //constructor references
         ConstructorRefFactory<ConstructorRef, Integer, String> constructorRefFactory = ConstructorRef::new;
         ConstructorRef constructorRef = constructorRefFactory.create(3401, "Hillview Avenue, Palo Alto, CA");
-        System.out.println(constructorRef.e);
-        System.out.println(constructorRef.t);
+        consumer.accept(constructorRef.e);
+        consumer.accept(constructorRef.t);
     }
 
     private static void printResult(List<String> list) {
         for(String str: list) {
-            System.out.println(str);
+            consumer.accept(str);
         }
     }
 
@@ -89,20 +107,19 @@ public class LambdaExpressionExplr {
     //built-in functional interfaces
     public static void runningTask2() {
         Predicate<String> predicate = (s) -> s.indexOf('a') > 0;
-        System.out.println(predicate.test("VMware"));
-        System.out.println(predicate.negate().test("EMC"));
+        consumer.accept(predicate.test("VMware"));
+        consumer.accept(predicate.negate().test("EMC"));
 
         Function<Integer, Integer> plusOne = (a) -> a+1;
-        System.out.println(plusOne.apply(2));
+        consumer.accept(plusOne.apply(2));
         Function<Integer, Integer> plusTwo = (a) -> a+2;
         Function<Integer, Integer> plusThree = plusTwo.compose(plusOne);
         Function<Integer, Integer> plusFour = plusThree.andThen(plusOne);
-        System.out.println(plusFour.apply(2));
+        consumer.accept(plusFour.apply(2));
 
         Supplier<Integer> supplier = () -> (int) (Math.random() * 10);
-        System.out.println(supplier.get());
+        consumer.accept(supplier.get());
 
-        Consumer<Object> consumer = System.out::println;
         consumer.accept(supplier.get());
 
         Comparator<String> comparator = (x, y) -> x.length()-y.length();
@@ -120,7 +137,11 @@ public class LambdaExpressionExplr {
             .sorted(comparator)
             .map(String::toUpperCase)
             .filter(predicate)
-            .forEach(System.out::println);
+            .forEach(consumer);
+
+        list.stream()
+            .findFirst()
+            .ifPresent(consumer);
 
         boolean anyContainsA = list.stream().anyMatch(predicate);
         consumer.accept(anyContainsA);
@@ -135,11 +156,98 @@ public class LambdaExpressionExplr {
         Optional<String> reduced2 = list.stream().filter(predicate).reduce((a, b) -> a + "." + b);
         reduced2.ifPresent(consumer);
 
+        IntStream.range(1990, 2015)
+            .forEach((x) -> {if(x%10==0) consumer.accept(x);});
+
+        Arrays.stream(new int[] {1, 2, 3})
+            .map(x -> 3*x)
+            .average()
+            .ifPresent(System.out::println);
+
+        Stream.of("a", "bc", "xy", "abc")
+            .map(s -> String.valueOf(s.length()))
+            .mapToInt(Integer::parseInt)
+            .max()
+            .ifPresent(System.out::println);
+
+        IntStream.range(0, 3)
+            .mapToObj(i -> new SomeObject(i))
+            .forEach(consumer);
+
+        //processing order: each element moves along the chain vertically
+        //hence might reduce the number of operations
+        //tricks: filter first
+        Stream.of(1, 2, 3, 4, 5, 6)
+            .filter(x -> {
+                consumer.accept("filter step: " + x);
+                if(x > 5) {
+                    return true;
+                }
+                return false;
+            })
+            .sorted((i1, i2) -> {
+                consumer.accept("sort step: " + i1 + " " + i2);
+                return i1 - i2;
+            })
+            .forEach(x -> {
+                consumer.accept("forEach step: " + x);
+            });
+
+        //reuse streams: In Java 8, after any terminal operation the stream is closed. Further use of the stream will lead to Exception.
+        Supplier<IntStream> streamSupplier = () -> IntStream.range(-10, 5).filter(x -> x<-9);
+        streamSupplier.get().forEach(System.out::println);
+        streamSupplier.get().average().ifPresent(System.out::println);
+
+        //collect
+        List<SomeObject> someObjects = Arrays.asList(
+                new SomeObject(0, "EMC"),
+                new SomeObject(1, "VMware"),
+                new SomeObject(2, "RSA"),
+                new SomeObject(3, "Pivotal"),
+                new SomeObject(4, "DELL"));
+        List<String> nameList = someObjects.stream().map(SomeObject::getName).collect(Collectors.toList());
+        printer.accept(nameList);
+        Set<String> nameSet = someObjects.stream().map(SomeObject::getName).collect(Collectors.toCollection(TreeSet::new));
+        printer.accept(nameSet);
+        String joined = someObjects.stream().map(Object::toString).collect(Collectors.joining(" #", "Result: ", "."));
+        printer.accept(joined);
+        int total = someObjects.stream().collect(Collectors.summingInt(SomeObject::getVal));
+        printer.accept(total);
+        Map<Integer, List<SomeObject>> byVal = someObjects.stream().collect(Collectors.groupingBy(SomeObject::getVal));
+        printer.accept(byVal);
+
         //parallel
         long slowSortedCount = list.stream().sorted().count();
         long fastSortedCount = list.parallelStream().sorted().count();
         consumer.accept(slowSortedCount);
         consumer.accept(fastSortedCount);
+    }
+
+    private static class SomeObject {
+        int val;
+        String name = null;
+
+        public SomeObject(int val) {
+            this.val = val;
+        }
+        public SomeObject(int val, String name) {
+            this.val = val;
+            this.name = name;
+        }
+
+        public int getVal() {
+            return val;
+        }
+        public String getName() {
+            return name;
+        }
+
+        public String toString() {
+            if(name == null) {
+                return String.valueOf(val);
+            }
+            return String.valueOf(val) + " : " + name;
+        }
     }
 
     //map
@@ -148,7 +256,11 @@ public class LambdaExpressionExplr {
         for(int i=0; i<list.size(); i++) {
             map.putIfAbsent(i, list.get(i));
         }
-        map.forEach((key, val) -> System.out.println(val));
+        map.forEach((key, val) -> {
+            if(key > 3) {
+                System.out.println(val);
+            }
+        });
         map.computeIfPresent(0, (k, v) -> "Dazhu");
         consumer.accept(map);
         map.computeIfPresent(1, (k, v) -> null);
@@ -172,22 +284,63 @@ public class LambdaExpressionExplr {
     public static void runningTask5() {
         Clock clock = Clock.systemDefaultZone();
         long millis = clock.millis();
+        consumer.accept(millis);
         Instant instant = clock.instant();
         Date legacyDate = Date.from(instant);
+        consumer.accept(legacyDate);
 
         Set<String> zones = ZoneId.getAvailableZoneIds();
-        zones.stream().filter((x) -> x.toLowerCase().contains("pacific")).forEach(System.out::println);
-        zones.stream().filter((x) -> x.toLowerCase().contains("8")).forEach(System.out::println);
+        zones.stream().filter((x) -> x.toLowerCase().contains("pacific")).forEach(consumer);
+        zones.stream().filter((x) -> x.toLowerCase().contains("8")).forEach(consumer);
         ZoneId zone1 = ZoneId.of("US/Pacific");
         ZoneId zone2 = ZoneId.of("Etc/GMT-8");
         consumer.accept(zone1.getRules());
         consumer.accept(zone2.getRules());
 
+        //local time
         LocalTime localTime1 = LocalTime.now(zone1);
         consumer.accept(localTime1);
         LocalTime localTime2 = LocalTime.now(zone2);
         consumer.accept(localTime2);
         consumer.accept(localTime1.isAfter(localTime2));
         consumer.accept(ChronoUnit.HOURS.between(localTime1, localTime2));
+
+        LocalTime localTime = LocalTime.of(11, 16, 58);
+        consumer.accept(localTime);
+        DateTimeFormatter germanFormatter = 
+                DateTimeFormatter
+                .ofLocalizedTime(FormatStyle.SHORT)
+                .withLocale(Locale.GERMAN);
+        LocalTime usLocalTime = LocalTime.parse("11:16", germanFormatter);
+        consumer.accept(usLocalTime);
+
+        //local date
+        LocalDate today = LocalDate.now();
+        LocalDate tomorrow = today.plus(1, ChronoUnit.DAYS);
+        LocalDate yesterday = tomorrow.minusDays(3);
+        consumer.accept(yesterday);
+        LocalDate someDay = LocalDate.of(2015, Month.NOVEMBER, 9);
+        DayOfWeek dayOfWeek = someDay.getDayOfWeek();
+        consumer.accept(dayOfWeek);
+
+        germanFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(Locale.GERMAN);
+        LocalDate someDate = LocalDate.parse("24.12.2014", germanFormatter);
+        consumer.accept(someDate);
+
+        //local date time
+        LocalDateTime localDateTime = LocalDateTime.of(2015, Month.NOVEMBER, 9, 14, 46, 59);
+        consumer.accept(localDateTime.getDayOfWeek());
+        consumer.accept(localDateTime.getMonth());
+        long minuteOfDay = localDateTime.getLong(ChronoField.MINUTE_OF_DAY);
+        consumer.accept(minuteOfDay);
+
+        instant = localDateTime.atZone(ZoneId.systemDefault()).toInstant();
+        legacyDate = Date.from(instant);
+        consumer.accept(legacyDate);
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm MMM-dd-yyyy");
+        LocalDateTime parsed = LocalDateTime.parse("14:54 Nov-09-2015", formatter);
+        String str = formatter.format(parsed);
+        consumer.accept(str);
     }
 }
