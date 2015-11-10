@@ -12,21 +12,25 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.time.temporal.ChronoField;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.IntSummaryStatistics;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.StringJoiner;
 import java.util.TreeSet;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -152,9 +156,9 @@ public class LambdaExpressionExplr {
         long countAnyContainsA = list.stream().filter(predicate).count();
         consumer.accept(countAnyContainsA);
         String reduced = list.stream().filter(predicate).reduce("", (a, b) -> a + "." + b);
-        consumer.accept(reduced);
+        printer.accept(reduced);
         Optional<String> reduced2 = list.stream().filter(predicate).reduce((a, b) -> a + "." + b);
-        reduced2.ifPresent(consumer);
+        reduced2.ifPresent(printer);
 
         IntStream.range(1990, 2015)
             .forEach((x) -> {if(x%10==0) consumer.accept(x);});
@@ -206,21 +210,70 @@ public class LambdaExpressionExplr {
                 new SomeObject(3, "Pivotal"),
                 new SomeObject(4, "DELL"));
         List<String> nameList = someObjects.stream().map(SomeObject::getName).collect(Collectors.toList());
-        printer.accept(nameList);
+        consumer.accept(nameList);
         Set<String> nameSet = someObjects.stream().map(SomeObject::getName).collect(Collectors.toCollection(TreeSet::new));
-        printer.accept(nameSet);
+        consumer.accept(nameSet);
         String joined = someObjects.stream().map(Object::toString).collect(Collectors.joining(" #", "Result: ", "."));
-        printer.accept(joined);
+        consumer.accept(joined);
         int total = someObjects.stream().collect(Collectors.summingInt(SomeObject::getVal));
-        printer.accept(total);
+        consumer.accept(total);
+        IntSummaryStatistics summary = someObjects.stream().collect(Collectors.summarizingInt(SomeObject::getVal));
+        consumer.accept(summary);
         Map<Integer, List<SomeObject>> byVal = someObjects.stream().collect(Collectors.groupingBy(SomeObject::getVal));
-        printer.accept(byVal);
+        consumer.accept(byVal);
+        Map<Integer, Double> totalByNameLen = someObjects.stream()
+                .collect(Collectors.groupingBy(x -> x.getName().length(), Collectors.averagingInt(SomeObject::getVal)));
+        consumer.accept(totalByNameLen);
+        Map<Boolean, List<SomeObject>> partition = someObjects.stream()
+                .collect(Collectors.partitioningBy( s -> s.getName().length()>4));
+        consumer.accept(partition);
+        Collector<SomeObject, StringJoiner, String> nameCollector = Collector.of(
+                () -> new StringJoiner(" # "), 
+                (x, y) -> x.add(y.getName()), 
+                (a, b) -> a.merge(b), 
+                StringJoiner::toString);
+        consumer.accept(someObjects.stream().collect(nameCollector));
+
+        IntStream.range(0, 2)
+            .mapToObj(i -> new Container("Container" + i))
+            .peek(c -> IntStream.range(0, 2)
+                    .mapToObj(i -> new SomeObject(i, "Object" + i + "/" + c.name))
+                    .forEach(c::add))
+            .flatMap(c -> c.objectList.stream())
+            .forEach(s -> consumer.accept(s.name));
+
+        someObjects.stream()
+            .reduce((o1, o2) -> o1.val > o2.val ? o1 : o2)
+            .ifPresent(printer);
+
+        SomeObject so = someObjects.stream()
+                            .reduce(new SomeObject(0, "sum val"), (o1, o2) -> {
+                                o1.val += o2.val;
+                                return o1;
+                            });
+        printer.accept(so);
 
         //parallel
         long slowSortedCount = list.stream().sorted().count();
         long fastSortedCount = list.parallelStream().sorted().count();
         consumer.accept(slowSortedCount);
         consumer.accept(fastSortedCount);
+
+        Integer valSum = someObjects
+                .parallelStream()
+                .reduce(0, (sum, object) -> sum += object.val, (sum1, sum2) -> sum1 + sum2);
+        printer.accept(valSum);
+    }
+
+    private static class Container {
+        String name;
+        List<SomeObject> objectList = new ArrayList<SomeObject>();
+        public Container(String name) {
+            this.name = name;
+        }
+        public void add(SomeObject object) {
+            objectList.add(object);
+        }
     }
 
     private static class SomeObject {
